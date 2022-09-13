@@ -4,7 +4,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     kotlin("jvm") version "1.6.10"
-    id("org.jetbrains.compose") version "1.1.0"
+    id("org.jetbrains.compose") version "1.1.1"
     id("org.openjfx.javafxplugin") version "0.0.9"
 }
 
@@ -40,10 +40,13 @@ dependencies {
     implementation ("io.data2viz.d2v:core-jvm:$d2vVersion")
     implementation ("io.data2viz.charts:core:$chartsVersion")
 //    implementation("io.data2viz.d2v:d2v-core-jvm:0.10.0")
-    implementation ("io.ktor:ktor-server-core:$ktor_version")
-    implementation("io.ktor:ktor-server-netty:$ktor_version")
-    implementation("ch.qos.logback:logback-classic:$logback_version")
-    testImplementation("io.ktor:ktor-server-tests:$ktor_version")
+//    implementation ("io.ktor:ktor-server-core:$ktor_version")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.4")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-javafx:1.6.4")
+//   implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4")
+//    implementation("io.ktor:ktor-server-netty:$ktor_version")
+//    implementation("ch.qos.logback:logback-classic:$logback_version")
+//    testImplementation("io.ktor:ktor-server-tests:$ktor_version")
     implementation(compose.desktop.currentOs)
     implementation( "com.github.oshi", name= "oshi-core", version= "5.8.3")
     //implementation ("org.hyperic:sigar:1.6.5.132-6")

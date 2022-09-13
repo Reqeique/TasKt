@@ -20,7 +20,10 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import io.data2viz.ExperimentalD2V
 import io.data2viz.charts.chart.chart
+import io.data2viz.charts.chart.constant
 import io.data2viz.charts.chart.discrete
+import io.data2viz.charts.chart.mark.MarkCurves
+import io.data2viz.charts.chart.mark.bar
 import io.data2viz.charts.chart.mark.line
 import io.data2viz.charts.chart.mark.plot
 import io.data2viz.charts.chart.quantitative
@@ -28,12 +31,16 @@ import io.data2viz.charts.config.ChartConfig
 import io.data2viz.charts.config.configs.greenConfig
 import io.data2viz.charts.config.configs.lightConfig
 import io.data2viz.charts.configuration.ChartConfiguration
+import io.data2viz.charts.core.CursorType
 import io.data2viz.charts.dimension.Dimension
+import io.data2viz.charts.viz.newVizContainer
 import io.data2viz.color.Colors
 import io.data2viz.color.col
+import io.data2viz.format.Locale
 import io.data2viz.geom.Size
 import io.data2viz.math.pct
-import io.data2viz.viz.newVizContainer
+import io.data2viz.shape.Symbols
+
 import javafx.application.Platform
 import javafx.embed.swing.JFXPanel
 import javafx.scene.Scene
@@ -82,13 +89,14 @@ fun main(args: Array<String>) = application {
 //        OperatingSystemMXBean::class.java
 //    )
 //
-        CoroutineScope(Dispatchers.Main).launch {
+        CoroutineScope(Main).launch {
 
             val systemInfo = SystemInfo()
             val hardware = systemInfo.hardware
 
             cpuName = systemInfo.hardware.processor.processorIdentifier.name.toString()
             totalMemory = hardware.memory.total.toString()
+
 
             while (true) {
                 hardware.processor.currentFreq.toList().map {
@@ -97,6 +105,7 @@ fun main(args: Array<String>) = application {
 
                 }
                 memoryFree = hardware.memory.available.bytesToMegabytes().megaBytes()
+
                 memoryInUse = (hardware.memory.total - hardware.memory.available).bytesToMegabytes().megaBytes()
                 memoryInUsePercentage = (((hardware.memory.total - hardware.memory.available).bytesToMegabytes()
                     .toFloat() / hardware.memory.total.bytesToMegabytes().toFloat()) * 100).roundToInt()
@@ -171,110 +180,125 @@ fun main(args: Array<String>) = application {
 
             }
         }
+        @Composable
+        fun MemoryGraph(jfxpanel: JFXPanel, container: Container){
+            val height = 200.0
+            val width = 450.0
+
+            JavaFXPanel(
+                panel = jfxpanel,
+                root = container
+            ) {
+                Platform.runLater {
+
+                    val values = mutableListOf(0.0)
+                    val p = Pane()
+                    var x = 1.0
+
+
+                    val viz = p.newVizContainer().apply {
+
+                        size = Size(width, height)
+
+                    }
+
+
+                    CoroutineScope(Main).launch {
+                        val systemInfo = SystemInfo()
+                        val hardware = systemInfo.hardware
+                        val y = mutableListOf(0.0)
+                        var _y = 0.0
+                        while (true) {
+                            delay(1500L)
+                            _y+=0.500
+                            y.add(0.500 + _y)
+                            val df = DecimalFormat("#.##")
+                            df.roundingMode = RoundingMode.CEILING
+                            val mem = (((hardware.memory.total - hardware.memory.available).bytesToMegabytes()
+                                .toFloat() / 1000)) //  (hardware.memory.total.bytesToMegabytes().toFloat()) * 100).roundToInt())
+                            if (values.size > 15) {
+                                values.removeAt(0)
+                                y.removeAt(0)
+                            }
+
+                            values.add(df.format(mem).toDouble())
+
+
+                            Platform.runLater {
+
+                                viz.chart(values, ChartConfig.default.apply {
+                                    mark {
+
+
+//                                        strokeWidth = 3.0
+                                        fills = listOf("#FFFF00".col)
+
+                                        strokeColors = listOf("#651fff".col)
+
+                                    }
+                                    yAxis {
+                                        gridLinesColor = "#BBBBBB".col
+                                        enableAxisLine = true
+                                    }
+
+                                }) {
+
+                                    val __values = quantitative({ indexInData.toDouble() }){
+                                        formatter = {
+
+                                            "${this?.div(2)} sec"
+                                        }
+                                    }
+                                    val _values = quantitative({ domain }) {
+
+                                    }
+                                    line(__values, _values) {
+                                        curve = MarkCurves.Curved
+                                        size = constant(30.0)
+
+
+                                        strokeWidth = constant(4.0)
+                                        y {
+                                            start = 0.000
+                                            tickCount = (systemInfo.hardware.memory.total/10.0.pow(9)).roundToInt()
+                                            print((systemInfo.hardware.memory.total/10.0.pow(9)))
+                                            enableTicks = false
+                                            end = (systemInfo.hardware.memory.total/10.0.pow(9)).toDouble()
+                                            strokeColor = "#651fff".col
+
+                                        }
+                                        x {
+                                            strokeColor = "#651fff".col
+                                        }
+
+                                    }
+                                }
+                            }
+//                                    }
+                        }
+                    }
+                    val scene = Scene(p, width, height)
+                    jfxpanel.scene = scene
+
+                }
+            }
+        }
 
         @Composable
         fun Column2() {
             Column(Modifier.padding(start = 16.dp, end = 16.dp)) {
+
                 Box(Modifier.fillMaxWidth().fillMaxHeight()) {
 
-                    val height = 400.0
-                    val width = 450.0
+                   Column(Modifier.fillMaxSize()){
+                       Text("Memory",
+                           fontSize = 18.sp,
+                           fontFamily = Fonts().sofiaBold)
+                       Box(Modifier.height(200.dp).width(450.dp)) {
+                           MemoryGraph(jfxpanel, container)
+                       }
+                   }
 
-                    JavaFXPanel(
-                        panel = jfxpanel,
-                        root = container
-                    ) {
-                        Platform.runLater {
-
-                            val values = mutableListOf(0.0)
-                            val p = Pane()
-                            var x = 1.0
-                            val viz = p.newVizContainer().apply {
-
-                                size = Size(width, height)
-
-                            }
-
-
-                            CoroutineScope(Main).launch {
-                                val systemInfo = SystemInfo()
-                                val hardware = systemInfo.hardware
-                                val y = mutableListOf(0.0)
-                                var _y = 0.0
-                                while (true) {
-                                    delay(500L)
-//                                    hardware.processor.currentFreq.toList().map {
-//                                        (it / (10f).pow(9))
-//                                    }.forEach {
-                                    _y+=0.500
-                                    y.add(0.500 + _y)
-                                    val df = DecimalFormat("#.##")
-                                    df.roundingMode = RoundingMode.CEILING
-                                    val mem = (((hardware.memory.total - hardware.memory.available).bytesToMegabytes()
-                                        .toFloat() / 1000)) //  (hardware.memory.total.bytesToMegabytes().toFloat()) * 100).roundToInt())
-                                    if (values.size > 15) {
-                                        values.removeAt(0)
-                                        y.removeAt(0)
-                                    }
-
-                                    values.add(df.format(mem).toDouble())
-
-
-                                    Platform.runLater {
-
-
-                                        viz.chart(values, ChartConfig.light.apply {
-                                            mark {
-                                                markersSize = 30.0
-
-                                                strokeWidth = 3.0
-
-                                                strokeColors = listOf("#651fff".col)
-//                                                fills = listOf(0x4A8F6E.col.withAlpha(80.pct))
-//
-//                                                strokeColorsHighlight = strokeColors.toList()
-//                                                fillsHighlight = fills.toList()
-//                                                strokeWidthHighlight = 4.0
-//
-//                                                strokeColorsSelect = strokeColors.toList()
-//                                                fillsSelect = fills.toList()
-//                                                strokeWidthSelect = 4.0
-                                            }
-
-                                        }) {
-
-                                            val __values = quantitative({ indexInData.toDouble() }){
-                                                formatter = {
-
-                                                    "${this?.div(2)} sec"
-                                                }
-                                            }
-                                            val _values = quantitative({ domain }) {
-
-                                            }
-                                            line(__values, _values) {
-
-                                                y {
-                                                    start = 0.000
-                                                    end = 10.00
-                                                    strokeColor = "#651fff".col
-
-                                                }
-                                                x {
-                                                    strokeColor = "#651fff".col
-                                                }
-
-                                            }
-                                        }
-                                    }
-//                                    }
-                                }
-                            }
-                            val scene = Scene(p, width, height)
-                            jfxpanel.scene = scene
-
-                        }
-                    }
 
 
                 }
@@ -290,11 +314,15 @@ fun main(args: Array<String>) = application {
         }
 
 
+
+
     }
 }
 
+
+
 @Composable
-public fun JavaFXPanel(
+fun JavaFXPanel(
     root: Container,
     panel: JFXPanel,
     onCreate: () -> Unit
