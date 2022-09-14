@@ -48,7 +48,10 @@ import javafx.scene.chart.XYChart
 import javafx.scene.layout.Pane
 import kotlinx.coroutines.*
 import kotlinx.coroutines.Dispatchers.Main
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.*
 import oshi.SystemInfo
+import oshi.hardware.GlobalMemory
 import util.gigaHertz
 import util.hertzToGigaHertz
 import util.megaBytes
@@ -80,7 +83,7 @@ fun main(args: Array<String>) = application {
         var cpuName by remember { mutableStateOf("") }
         var isCPUClicked by remember { mutableStateOf(true) }
         var isMemoryClicked by remember { mutableStateOf(false) }
-        var totalMemory by remember { mutableStateOf("") }
+        var totalMemory by remember { mutableStateOf(0L) }
         var memoryFree by remember { mutableStateOf("") }
         var memoryInUse by remember { mutableStateOf("") }
         val cpuInUse by remember { mutableStateOf("") }
@@ -88,6 +91,8 @@ fun main(args: Array<String>) = application {
 //    val osBean: OperatingSystemMXBean = ManagementFactory.getPlatformMXBean(
 //        OperatingSystemMXBean::class.java
 //    )
+        /** used to send statstics to the graphs */
+        val memoryChannel = Channel<GlobalMemory>()
 //
         CoroutineScope(Main).launch {
 
@@ -95,14 +100,13 @@ fun main(args: Array<String>) = application {
             val hardware = systemInfo.hardware
 
             cpuName = systemInfo.hardware.processor.processorIdentifier.name.toString()
-            totalMemory = hardware.memory.total.toString()
+            totalMemory = hardware.memory.total
 
 
             while (true) {
+
                 hardware.processor.currentFreq.toList().map {
                     (it / (10f).pow(9))
-                }.forEach {
-
                 }
                 memoryFree = hardware.memory.available.bytesToMegabytes().megaBytes()
 
@@ -110,7 +114,7 @@ fun main(args: Array<String>) = application {
                 memoryInUsePercentage = (((hardware.memory.total - hardware.memory.available).bytesToMegabytes()
                     .toFloat() / hardware.memory.total.bytesToMegabytes().toFloat()) * 100).roundToInt()
                     .toString() + "%"
-
+                memoryChannel.send(hardware.memory)
 
                 hardware.processor.currentFreq.forEach {
                     cpuClock = it.hertzToGigaHertz().gigaHertz()
@@ -166,7 +170,7 @@ fun main(args: Array<String>) = application {
                                 fontFamily = Fonts().sofiaBold
                             )
                             Text(
-                                """$memoryFree free of ${totalMemory.toLongOrNull()?.bytesToMegabytes()} MB
+                                """$memoryFree free of ${totalMemory.bytesToMegabytes()} MB
                             |$memoryInUse ($memoryInUsePercentage) in use
                         """.trimMargin(),
                                 Modifier.padding(start = 4.dp),
@@ -181,122 +185,104 @@ fun main(args: Array<String>) = application {
             }
         }
         @Composable
-        fun MemoryGraph(jfxpanel: JFXPanel, container: Container){
-            val height = 200.0
-            val width = 450.0
+        fun MemoryGraph(jfxpanel: JFXPanel, container: Container, _size: Size){
 
             JavaFXPanel(
                 panel = jfxpanel,
                 root = container
             ) {
                 Platform.runLater {
-
-                    val values = mutableListOf(0.0)
                     val p = Pane()
-                    var x = 1.0
 
 
                     val viz = p.newVizContainer().apply {
 
-                        size = Size(width, height)
+                        size = _size
 
                     }
 
-
+                    val THRESHOLD = 15
                     CoroutineScope(Main).launch {
-                        val systemInfo = SystemInfo()
-                        val hardware = systemInfo.hardware
-                        val y = mutableListOf(0.0)
-                        var _y = 0.0
-                        while (true) {
-                            delay(1500L)
-                            _y+=0.500
-                            y.add(0.500 + _y)
-                            val df = DecimalFormat("#.##")
-                            df.roundingMode = RoundingMode.CEILING
-                            val mem = (((hardware.memory.total - hardware.memory.available).bytesToMegabytes()
-                                .toFloat() / 1000)) //  (hardware.memory.total.bytesToMegabytes().toFloat()) * 100).roundToInt())
-                            if (values.size > 15) {
-                                values.removeAt(0)
-                                y.removeAt(0)
-                            }
+                        val valuesForUsedMemory = mutableListOf(0.0)
+                        memoryChannel.consumeAsFlow().collectIndexed { index,it ->
 
-                            values.add(df.format(mem).toDouble())
-
-
+                            valuesForUsedMemory.add((it.total - it.available).bytesToGigabytes().toDouble())
+                            print((it.total - it.available).bytesToMegabytes()/1000)
+                            if(valuesForUsedMemory.size > THRESHOLD) valuesForUsedMemory.removeAt(0)
                             Platform.runLater {
 
-                                viz.chart(values, ChartConfig.default.apply {
+                                viz.chart(valuesForUsedMemory,  ChartConfig.default.apply {
                                     mark {
 
 
-//                                        strokeWidth = 3.0
+                                       // strokeWidth = 3.0
                                         fills = listOf("#FFFF00".col)
 
                                         strokeColors = listOf("#651fff".col)
 
                                     }
-                                    yAxis {
-                                        gridLinesColor = "#BBBBBB".col
-                                        enableAxisLine = true
-                                    }
 
-                                }) {
-
-                                    val __values = quantitative({ indexInData.toDouble() }){
+                                   }){
+                                    val xC = quantitative ({ this.indexInData.toDouble() }){
                                         formatter = {
 
-                                            "${this?.div(2)} sec"
+                                            if(this!!.roundToInt() < THRESHOLD ) "${this/2.0}" else "${this.plus(index)}"
                                         }
                                     }
-                                    val _values = quantitative({ domain }) {
-
-                                    }
-                                    line(__values, _values) {
-                                        curve = MarkCurves.Curved
-                                        size = constant(30.0)
-
-
-                                        strokeWidth = constant(4.0)
+                                    val yC = quantitative ({ domain})
+                                    line(xC, yC){
+                                        strokeWidth = constant(3.0)
                                         y {
-                                            start = 0.000
-                                            tickCount = (systemInfo.hardware.memory.total/10.0.pow(9)).roundToInt()
-                                            print((systemInfo.hardware.memory.total/10.0.pow(9)))
-                                            enableTicks = false
-                                            end = (systemInfo.hardware.memory.total/10.0.pow(9)).toDouble()
-                                            strokeColor = "#651fff".col
+                                            curve = MarkCurves.Curved
+                                            enableTicks = true
 
-                                        }
-                                        x {
-                                            strokeColor = "#651fff".col
-                                        }
+                                            tickCount = (it.total).bytesToGigabytes().toInt() + 1
+                                            end = (it.total).bytesToGigabytes().toDouble()
 
+                                            start = 0.0
+                                        }
                                     }
+
                                 }
                             }
-//                                    }
+
                         }
+
+
                     }
-                    val scene = Scene(p, width, height)
+                    val scene = Scene(p,_size.width, _size.height)
                     jfxpanel.scene = scene
 
                 }
             }
         }
 
+        @Preview
         @Composable
         fun Column2() {
             Column(Modifier.padding(start = 16.dp, end = 16.dp)) {
 
                 Box(Modifier.fillMaxWidth().fillMaxHeight()) {
+                   Column(Modifier.fillMaxSize()) {
+                       Row(Modifier.fillMaxWidth().wrapContentHeight(), horizontalArrangement = Arrangement.SpaceBetween) {
+                           Text(
+                               "Memory",
+                               fontSize = 18.sp,
+                               fontFamily = Fonts().sofiaBold
+                           )
 
-                   Column(Modifier.fillMaxSize()){
-                       Text("Memory",
-                           fontSize = 18.sp,
-                           fontFamily = Fonts().sofiaBold)
-                       Box(Modifier.height(200.dp).width(450.dp)) {
-                           MemoryGraph(jfxpanel, container)
+                           Text(
+                               "${totalMemory.bytesToGigabytes().roundToInt()} GB",
+                               fontSize = 18.sp,
+                               fontFamily = Fonts().sofiaRegular,
+
+                           )
+
                        }
+                       Box(Modifier.height(200.dp).width(450.dp).padding(vertical = 16.dp)) {
+                           MemoryGraph(jfxpanel, container, Size(450.0, 200.0))
+                       }
+
                    }
 
 
