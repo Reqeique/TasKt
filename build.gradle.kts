@@ -28,13 +28,9 @@ repositories {
 val d2vVersion="0.8.12"
 val chartsVersion="1.1.0-eap1"
 dependencies {
-    // https://mvnrepository.com/artifact/io.data2viz/d2v-core-jvm
-//    implementation("io.data2viz:d2v-core-jvm:0.8.0-RC5")
-//    // https://mvnrepository.com/artifact/io.data2viz.charts/core-jfx
-//    implementation("io.data2viz.charts:core-jfx:1.1.0-eap1")
-//// https://mvnrepository.com/artifact/io.data2viz.charts/core-jvm
-//    implementation("io.data2viz.charts:core-jvm:1.0.7-RC3")
-    // https://mvnrepository.com/artifact/org.openjfx/javafx-swing
+    // https://mvnrepository.com/artifact/org.jetbrains.kotlin/kotlin-reflect
+    runtimeOnly("org.jetbrains.kotlin:kotlin-reflect:1.6.10")
+
     implementation("org.openjfx:javafx-swing:11-ea+24")
 
     implementation ("io.data2viz.d2v:core-jvm:$d2vVersion")
@@ -50,6 +46,7 @@ dependencies {
     implementation(compose.desktop.currentOs)
     implementation( "com.github.oshi", name= "oshi-core", version= "5.8.3")
     //implementation ("org.hyperic:sigar:1.6.5.132-6")
+    implementation(kotlin("reflect"))
 
 }
 

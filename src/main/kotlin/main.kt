@@ -1,7 +1,10 @@
 //import com.sun.management.OperatingSystemMXBean
 
 import androidx.compose.desktop.ui.tooling.preview.Preview
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.Button
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
@@ -21,50 +24,35 @@ import androidx.compose.ui.window.application
 import io.data2viz.ExperimentalD2V
 import io.data2viz.charts.chart.chart
 import io.data2viz.charts.chart.constant
-import io.data2viz.charts.chart.discrete
 import io.data2viz.charts.chart.mark.MarkCurves
-import io.data2viz.charts.chart.mark.bar
 import io.data2viz.charts.chart.mark.line
-import io.data2viz.charts.chart.mark.plot
 import io.data2viz.charts.chart.quantitative
 import io.data2viz.charts.config.ChartConfig
-import io.data2viz.charts.config.configs.greenConfig
-import io.data2viz.charts.config.configs.lightConfig
-import io.data2viz.charts.configuration.ChartConfiguration
-import io.data2viz.charts.core.CursorType
-import io.data2viz.charts.dimension.Dimension
+import io.data2viz.charts.layout.sizeManager
 import io.data2viz.charts.viz.newVizContainer
-import io.data2viz.color.Colors
 import io.data2viz.color.col
-import io.data2viz.format.Locale
 import io.data2viz.geom.Size
-import io.data2viz.math.pct
-import io.data2viz.shape.Symbols
-
 import javafx.application.Platform
 import javafx.embed.swing.JFXPanel
+import javafx.geometry.Insets
 import javafx.scene.Scene
-import javafx.scene.chart.XYChart
+import javafx.scene.control.Button
+import javafx.scene.layout.Background
+import javafx.scene.layout.BackgroundFill
+import javafx.scene.layout.CornerRadii
 import javafx.scene.layout.Pane
+import javafx.scene.paint.Color
 import kotlinx.coroutines.*
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import oshi.SystemInfo
 import oshi.hardware.GlobalMemory
-import util.gigaHertz
-import util.hertzToGigaHertz
-import util.megaBytes
+import oshi.hardware.PhysicalMemory
+import util.*
 import java.awt.BorderLayout
 import java.awt.Container
-import java.math.RoundingMode
-import java.text.DecimalFormat
-import java.text.SimpleDateFormat
 import java.util.*
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.ThreadLocalRandom
-import java.util.concurrent.TimeUnit
 import javax.swing.JPanel
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -74,18 +62,23 @@ import javafx.scene.text.Text as JFXText
 @OptIn(ExperimentalStdlibApi::class, ExperimentalD2V::class)
 
 fun main(args: Array<String>) = application {
+
     Window(onCloseRequest = ::exitApplication) {
+        val mainCoroutineScope = CoroutineScope(Main)
         val jfxpanel = remember { JFXPanel() }
         val jfxtext = remember { JFXText() }
         val container = this@Window.window
         var maxCpuClock by remember { mutableStateOf("") }
         var cpuClock by remember { mutableStateOf("") }
         var cpuName by remember { mutableStateOf("") }
+
         var isCPUClicked by remember { mutableStateOf(true) }
         var isMemoryClicked by remember { mutableStateOf(false) }
         var totalMemory by remember { mutableStateOf(0L) }
+        var physicalMemory by mutableStateOf(mutableListOf<PhysicalMemory>())
         var memoryFree by remember { mutableStateOf("") }
         var memoryInUse by remember { mutableStateOf("") }
+        var memoryPageSize by remember { mutableStateOf("")}
         val cpuInUse by remember { mutableStateOf("") }
         var memoryInUsePercentage by remember { mutableStateOf("") }
 //    val osBean: OperatingSystemMXBean = ManagementFactory.getPlatformMXBean(
@@ -94,23 +87,25 @@ fun main(args: Array<String>) = application {
         /** used to send statstics to the graphs */
         val memoryChannel = Channel<GlobalMemory>()
 //
-        CoroutineScope(Main).launch {
+        mainCoroutineScope.launch {
 
             val systemInfo = SystemInfo()
             val hardware = systemInfo.hardware
 
+
             cpuName = systemInfo.hardware.processor.processorIdentifier.name.toString()
             totalMemory = hardware.memory.total
-
+            physicalMemory = hardware.memory.physicalMemory
 
             while (true) {
 
                 hardware.processor.currentFreq.toList().map {
                     (it / (10f).pow(9))
                 }
-                memoryFree = hardware.memory.available.bytesToMegabytes().megaBytes()
 
+                memoryFree = hardware.memory.available.bytesToMegabytes().megaBytes()
                 memoryInUse = (hardware.memory.total - hardware.memory.available).bytesToMegabytes().megaBytes()
+                memoryPageSize = hardware.memory.pageSize.toString()
                 memoryInUsePercentage = (((hardware.memory.total - hardware.memory.available).bytesToMegabytes()
                     .toFloat() / hardware.memory.total.bytesToMegabytes().toFloat()) * 100).roundToInt()
                     .toString() + "%"
@@ -184,62 +179,86 @@ fun main(args: Array<String>) = application {
 
             }
         }
-        @Composable
-        fun MemoryGraph(jfxpanel: JFXPanel, container: Container, _size: Size){
 
+        @Composable
+        fun MemoryGraph(jfxpanel: JFXPanel, container: Container, _size: Size) {
+            println("LOG199 $_size")
             JavaFXPanel(
                 panel = jfxpanel,
                 root = container
             ) {
                 Platform.runLater {
-                    val p = Pane()
 
+                    val p = Pane()
 
                     val viz = p.newVizContainer().apply {
 
-                        size = _size
+                        size = _size.copy(height = _size.height - 32)
 
                     }
+                    p.widthProperty().addListener { obs, oldVal, newVal ->
+                        viz.size = _size.copy(width = newVal.toDouble(), height = _size.height - 32)
+                    }
+
+
 
                     val THRESHOLD = 15
-                    CoroutineScope(Main).launch {
+                    mainCoroutineScope.launch {
                         val valuesForUsedMemory = mutableListOf(0.0)
-                        memoryChannel.consumeAsFlow().collectIndexed { index,it ->
+                        val timedIndex = mutableListOf(0.0)
+                        memoryChannel.consumeAsFlow().collectIndexed { index, it ->
+
 
                             valuesForUsedMemory.add((it.total - it.available).bytesToGigabytes().toDouble())
-                            print((it.total - it.available).bytesToMegabytes()/1000)
-                            if(valuesForUsedMemory.size > THRESHOLD) valuesForUsedMemory.removeAt(0)
+
+                            if (valuesForUsedMemory.size > THRESHOLD) valuesForUsedMemory.removeAt(0)
                             Platform.runLater {
 
-                                viz.chart(valuesForUsedMemory,  ChartConfig.default.apply {
+                                viz.chart(valuesForUsedMemory, ChartConfig.default.apply {
+
                                     mark {
 
 
-                                       // strokeWidth = 3.0
+                                        // strokeWidth = 3.0
                                         fills = listOf("#FFFF00".col)
 
                                         strokeColors = listOf("#651fff".col)
 
                                     }
+                                    yAxis {
+                                        gridLinesColor = "#BBBBBB".col
+                                        enableAxisLine = true
+                                    }
 
-                                   }){
-                                    val xC = quantitative ({ this.indexInData.toDouble() }){
+                                }) {
+                                    val xC = quantitative(
+                                        {
+                                            indexInData.toDouble()
+
+                                        }
+
+                                    ) {
+
                                         formatter = {
 
-                                            if(this!!.roundToInt() < THRESHOLD ) "${this/2.0}" else "${this.plus(index)}"
+                                            if (this?.roundToInt()!! + 1 < THRESHOLD - 1) "$this" else "${this + index}"
+
                                         }
                                     }
-                                    val yC = quantitative ({ domain})
-                                    line(xC, yC){
+                                    val yC = quantitative({ domain })
+                                    line(xC, yC) {
                                         strokeWidth = constant(3.0)
                                         y {
                                             curve = MarkCurves.Curved
-                                            enableTicks = true
+                                            enableTicks = false
 
                                             tickCount = (it.total).bytesToGigabytes().toInt() + 1
                                             end = (it.total).bytesToGigabytes().toDouble()
 
                                             start = 0.0
+                                        }
+                                        x {
+                                            enableTicks = false
                                         }
                                     }
 
@@ -250,7 +269,9 @@ fun main(args: Array<String>) = application {
 
 
                     }
-                    val scene = Scene(p,_size.width, _size.height)
+
+                    val scene = Scene(p, _size.width, _size.height)
+
                     jfxpanel.scene = scene
 
                 }
@@ -263,31 +284,93 @@ fun main(args: Array<String>) = application {
             Column(Modifier.padding(start = 16.dp, end = 16.dp)) {
 
                 Box(Modifier.fillMaxWidth().fillMaxHeight()) {
-                   Column(Modifier.fillMaxSize()) {
-                       Row(Modifier.fillMaxWidth().wrapContentHeight(), horizontalArrangement = Arrangement.SpaceBetween) {
-                           Text(
-                               "Memory",
-                               fontSize = 18.sp,
-                               fontFamily = Fonts().sofiaBold
-                           )
+                    Column(Modifier.fillMaxSize()) {
+                        Row(
+                            Modifier.fillMaxWidth().wrapContentHeight(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                "Memory",
+                                fontSize = 18.sp,
+                                fontFamily = Fonts().sofiaBold
+                            )
 
-                           Text(
-                               "${totalMemory.bytesToGigabytes().roundToInt()} GB",
-                               fontSize = 18.sp,
-                               fontFamily = Fonts().sofiaRegular,
+                            Text(
+                                "${totalMemory.bytesToGigabytes().roundToInt()} GB",
+                                fontSize = 18.sp,
+                                fontFamily = Fonts().sofiaRegular,
 
-                           )
+                                )
 
-                       }
-                       Box(Modifier.height(200.dp).width(450.dp).padding(vertical = 16.dp)) {
-                           MemoryGraph(jfxpanel, container, Size(450.0, 200.0))
-                       }
+                        }
+                        BoxWithConstraints(Modifier.height(200.dp).fillMaxWidth().padding(vertical = 16.dp)) {
+                            print("LOG_12 constraint ${this.constraints}, h $this")
+                            MemoryGraph(jfxpanel, container, Size(constraints.minWidth.toDouble(), 200.0))
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().fillMaxHeight(),
+                        ) {
+                            Row(Modifier.fillMaxHeight().weight(2f), horizontalArrangement = Arrangement.Start) {
+                                Column(Modifier.padding(bottom = 4.dp, start = 4.dp, end = 4.dp)) {
+                                    Text("In use", fontFamily = Fonts().sofiaRegular, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                                    Text("$memoryInUse", fontFamily = Fonts().sofiaRegular, fontSize = 16.sp, modifier =Modifier.padding(bottom = 4.dp))
+                                    Text("Page size", fontFamily = Fonts().sofiaRegular, fontSize = 12.sp)
+                                    Text("$memoryPageSize", fontFamily = Fonts().sofiaRegular, fontSize = 16.sp,modifier = Modifier.padding(bottom = 4.dp))
+                                }
+                                Column(Modifier.padding(4.dp)) {
+                                    Text("Available", fontFamily = Fonts().sofiaRegular, fontSize = 12.sp)
+                                    Text("$memoryFree", fontFamily = Fonts().sofiaRegular, fontSize = 16.sp)
+                                }
+                            }
 
-                   }
 
+                            LazyColumn(Modifier.fillMaxHeight().weight(1f)) {
+                                if (physicalMemory.size >= 1) {
+                                    val formattedPhysicalMemory = physicalMemory[0].asMap().map {
+                                        val key = it.key.capitalize()
+                                        val value = when (it.key) {
+                                            "bankLabel" -> (it.value as String).capitalize()
+                                            "capacity" -> (it.value as Long).bytesToGigabytes().gigaByte()
+                                            "clockSpeed" -> ((it.value as Long) / (10.0.pow(6.0))).megaHertz()
+                                            "manufacture" -> (it.value as String).capitalize()
+
+                                            else -> it.value
+                                        }
+                                        key to value
+                                    }.toMap()
+
+                                    items(items = formattedPhysicalMemory.map { it.value }) { item ->
+
+                                        Row(
+                                            modifier = Modifier.padding(bottom = 8.dp).fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                formattedPhysicalMemory.filterValues { v -> v == item }.keys.first(),
+                                                fontFamily = Fonts().sofiaRegular,
+                                                fontSize = 12.sp
+                                            )
+                                            Text(
+                                                "$item",
+                                                fontFamily = Fonts().sofiaRegular,
+                                                modifier = Modifier.padding(4.dp, 0.dp, 0.dp, 0.dp),
+                                                fontSize = 16.sp,
+
+                                            )
+                                        }
+
+                                    }
+
+                                }
+                            }
+
+                        }
+
+                    }
 
 
                 }
+
             }
         }
 
@@ -300,11 +383,8 @@ fun main(args: Array<String>) = application {
         }
 
 
-
-
     }
 }
-
 
 
 @Composable
