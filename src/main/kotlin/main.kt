@@ -1,17 +1,19 @@
 //import com.sun.management.OperatingSystemMXBean
 
+import androidx.compose.desktop.DesktopMaterialTheme
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.Button
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Text
+import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.toArgb
+
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -41,11 +43,12 @@ import javafx.scene.layout.Background
 import javafx.scene.layout.BackgroundFill
 import javafx.scene.layout.CornerRadii
 import javafx.scene.layout.Pane
-import javafx.scene.paint.Color
+
 import kotlinx.coroutines.*
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
+import org.jetbrains.skiko.currentSystemTheme
 import oshi.SystemInfo
 import oshi.hardware.GlobalMemory
 import oshi.hardware.PhysicalMemory
@@ -62,35 +65,35 @@ import javafx.scene.text.Text as JFXText
 @OptIn(ExperimentalStdlibApi::class, ExperimentalD2V::class)
 
 fun main(args: Array<String>) = application {
+    val mainCoroutineScope = CoroutineScope(Main)
+    val jfxpanel = remember { JFXPanel() }
+    val jfxtext = remember { JFXText() }
 
+    var maxCpuClock by remember { mutableStateOf("") }
+    var cpuClock by remember { mutableStateOf("") }
+    var cpuName by remember { mutableStateOf("") }
+
+    var isCPUClicked by remember { mutableStateOf(true) }
+    var isMemoryClicked by remember { mutableStateOf(false) }
+    var totalMemory by remember { mutableStateOf(0L) }
+    var physicalMemory by mutableStateOf(mutableListOf<PhysicalMemory>())
+    var memoryFree by remember { mutableStateOf("") }
+    var memoryInUse by remember { mutableStateOf("") }
+    var memoryPageSize by remember { mutableStateOf("")}
+    val cpuInUse by remember { mutableStateOf("") }
+    var memoryInUsePercentage by remember { mutableStateOf("") }
     Window(onCloseRequest = ::exitApplication) {
-        val mainCoroutineScope = CoroutineScope(Main)
-        val jfxpanel = remember { JFXPanel() }
-        val jfxtext = remember { JFXText() }
         val container = this@Window.window
-        var maxCpuClock by remember { mutableStateOf("") }
-        var cpuClock by remember { mutableStateOf("") }
-        var cpuName by remember { mutableStateOf("") }
 
-        var isCPUClicked by remember { mutableStateOf(true) }
-        var isMemoryClicked by remember { mutableStateOf(false) }
-        var totalMemory by remember { mutableStateOf(0L) }
-        var physicalMemory by mutableStateOf(mutableListOf<PhysicalMemory>())
-        var memoryFree by remember { mutableStateOf("") }
-        var memoryInUse by remember { mutableStateOf("") }
-        var memoryPageSize by remember { mutableStateOf("")}
-        val cpuInUse by remember { mutableStateOf("") }
-        var memoryInUsePercentage by remember { mutableStateOf("") }
-//    val osBean: OperatingSystemMXBean = ManagementFactory.getPlatformMXBean(
-//        OperatingSystemMXBean::class.java
-//    )
         /** used to send statstics to the graphs */
         val memoryChannel = Channel<GlobalMemory>()
-//
+
         mainCoroutineScope.launch {
 
             val systemInfo = SystemInfo()
             val hardware = systemInfo.hardware
+
+
 
 
             cpuName = systemInfo.hardware.processor.processorIdentifier.name.toString()
@@ -112,17 +115,16 @@ fun main(args: Array<String>) = application {
                     .toString() + "%"
                 memoryChannel.send(hardware.memory)
 
-                hardware.processor.currentFreq.forEach {
-                    cpuClock = it.hertzToGigaHertz().gigaHertz()
-                }
+                cpuClock = (hardware.processor.systemCpuLoadTicks).map { it }.average().gigaHertz()
                 maxCpuClock = hardware.processor.maxFreq.hertzToGigaHertz().gigaHertz()
                 delay(1000)
 
             }
 
 
+
         }
-        //    }
+
         @Preview
         @Composable
         fun Column1() {
@@ -183,6 +185,7 @@ fun main(args: Array<String>) = application {
 
         @Composable
         fun MemoryGraph(jfxpanel: JFXPanel, container: Container, _size: Size) {
+            val color = MaterialTheme.colors
             println("LOG199 $_size")
             JavaFXPanel(
                 panel = jfxpanel,
@@ -223,12 +226,19 @@ fun main(args: Array<String>) = application {
                                         // strokeWidth = 3.0
                                         fills = listOf("#FFFF00".col)
 
-                                        strokeColors = listOf("#651fff".col)
+
+                                        strokeColors = listOf(color.primary.toArgb().col)
+                                        fillsHighlight = strokeColors
 
                                     }
                                     yAxis {
+
                                         gridLinesColor = "#BBBBBB".col
                                         enableAxisLine = true
+                                    }
+                                    chart {
+                                        backgroundColor = color.surface.toArgb().col
+
                                     }
 
                                 }) {
@@ -298,7 +308,7 @@ fun main(args: Array<String>) = application {
                             )
 
                             Text(
-                                "${physicalMemory.sumOf { it.capacity }.bytesToGigabytes().gigaByte()}",
+                                physicalMemory.sumOf { it.capacity }.bytesToGigabytes().gigaByte(),
                                 fontSize = 18.sp,
                                 fontFamily = Fonts().sofiaRegular,
 
@@ -377,8 +387,9 @@ fun main(args: Array<String>) = application {
         }
 
 
-        MaterialTheme {
-            Row(Modifier.padding(top = 16.dp, start = 8.dp)) {
+        MaterialTheme() {
+
+            Row(Modifier.padding(top = 16.dp, start = 8.dp).background(MaterialTheme.colors.surface)) {
                 Column1()
                 Column2()
             }
@@ -393,15 +404,15 @@ fun main(args: Array<String>) = application {
 fun JavaFXPanel(
     root: Container,
     panel: JFXPanel,
-    onCreate: () -> Unit
+ onCreate: () -> Unit
 ) {
     val container = remember { JPanel() }
     val density = LocalDensity.current.density
 
     Layout(
-        content = {
-
-        },
+        content =
+        {}
+        ,
         modifier = Modifier.onGloballyPositioned { childCoordinates ->
             val coordinates = childCoordinates.parentCoordinates!!
             val location = coordinates.localToWindow(Offset.Zero).round()
