@@ -106,6 +106,7 @@ fun main(args: Array<String>) = application {
                 memoryFree = hardware.memory.available.bytesToMegabytes().megaBytes()
                 memoryInUse = (hardware.memory.total - hardware.memory.available).bytesToMegabytes().megaBytes()
                 memoryPageSize = hardware.memory.pageSize.toString()
+
                 memoryInUsePercentage = (((hardware.memory.total - hardware.memory.available).bytesToMegabytes()
                     .toFloat() / hardware.memory.total.bytesToMegabytes().toFloat()) * 100).roundToInt()
                     .toString() + "%"
@@ -252,8 +253,9 @@ fun main(args: Array<String>) = application {
                                             curve = MarkCurves.Curved
                                             enableTicks = false
 
-                                            tickCount = (it.total).bytesToGigabytes().toInt() + 1
-                                            end = (it.total).bytesToGigabytes().toDouble()
+                                            tickCount =
+                                                it.physicalMemory.sumOf { it.capacity }.bytesToGigabytes().roundToInt()
+                                            end = it.physicalMemory.sumOf { it.capacity }.bytesToGigabytes()
 
                                             start = 0.0
                                         }
@@ -296,7 +298,7 @@ fun main(args: Array<String>) = application {
                             )
 
                             Text(
-                                "${totalMemory.bytesToGigabytes().roundToInt()} GB",
+                                "${physicalMemory.sumOf { it.capacity }.bytesToGigabytes().gigaByte()}",
                                 fontSize = 18.sp,
                                 fontFamily = Fonts().sofiaRegular,
 

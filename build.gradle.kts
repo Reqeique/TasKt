@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "com.ultraone"
-version = "1.0"
+version = "1.1"
 val ktor_version = "1.6.5"
 val logback_version = "1.2.7"
 repositories {
@@ -31,7 +31,9 @@ dependencies {
     // https://mvnrepository.com/artifact/org.jetbrains.kotlin/kotlin-reflect
     runtimeOnly("org.jetbrains.kotlin:kotlin-reflect:1.6.10")
 
-    implementation("org.openjfx:javafx-swing:11-ea+24")
+    // https://mvnrepository.com/artifact/org.openjfx/javafx-swing
+    implementation("org.openjfx:javafx-swing:15-ea+2")
+
 
     implementation ("io.data2viz.d2v:core-jvm:$d2vVersion")
     implementation ("io.data2viz.charts:core:$chartsVersion")
@@ -54,20 +56,22 @@ tasks.withType<KotlinCompile>() {
     kotlinOptions.jvmTarget = "15"
 }
 javafx {
-    version = "15.0.1"
+    version = "15"
     modules = listOf("javafx.controls", "javafx.graphics", "javafx.swing", "javafx.base")
 }
 
 compose.desktop {
     application {
         javaHome = System.getProperty("java.home")
+
         mainClass = "MainKt"
         nativeDistributions {
 
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "ProjectProfiler"
-            packageVersion = "1.0.0"
+            packageVersion = "1.0.1"
             windows {
+
                 this.shortcut = true
                 console = true
                 msiPackageVersion = "1.0.0"
