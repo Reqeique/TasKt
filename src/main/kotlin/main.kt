@@ -69,19 +69,24 @@ fun main(args: Array<String>) = application {
     val jfxpanel = remember { JFXPanel() }
     val jfxtext = remember { JFXText() }
 
+
     var maxCpuClock by remember { mutableStateOf("") }
     var cpuClock by remember { mutableStateOf("") }
     var cpuName by remember { mutableStateOf("") }
+    val cpuInUse by remember { mutableStateOf("") }
+
 
     var isCPUClicked by remember { mutableStateOf(true) }
     var isMemoryClicked by remember { mutableStateOf(false) }
-    var totalMemory by remember { mutableStateOf(0L) }
-    var physicalMemory by mutableStateOf(mutableListOf<PhysicalMemory>())
+
+    /** */
     var memoryFree by remember { mutableStateOf("") }
     var memoryInUse by remember { mutableStateOf("") }
     var memoryPageSize by remember { mutableStateOf("")}
-    val cpuInUse by remember { mutableStateOf("") }
+    var totalMemory by remember { mutableStateOf(0L) }
+    var physicalMemory by mutableStateOf(mutableListOf<PhysicalMemory>())
     var memoryInUsePercentage by remember { mutableStateOf("") }
+
     Window(onCloseRequest = ::exitApplication) {
         val container = this@Window.window
 
@@ -106,13 +111,10 @@ fun main(args: Array<String>) = application {
                     (it / (10f).pow(9))
                 }
 
-                memoryFree = hardware.memory.available.bytesToMegabytes().megaBytes()
-                memoryInUse = (hardware.memory.total - hardware.memory.available).bytesToMegabytes().megaBytes()
+                memoryFree = hardware.memory.calculate().memoryFree().bytesToMegabytes().megaBytes()
+                memoryInUse = hardware.memory.calculate().memoryInUse().bytesToMegabytes().megaBytes()
                 memoryPageSize = hardware.memory.pageSize.toString()
-
-                memoryInUsePercentage = (((hardware.memory.total - hardware.memory.available).bytesToMegabytes()
-                    .toFloat() / hardware.memory.total.bytesToMegabytes().toFloat()) * 100).roundToInt()
-                    .toString() + "%"
+                memoryInUsePercentage = "${hardware.memory.calculate().memoryInUsePercentage()} %"
                 memoryChannel.send(hardware.memory)
 
                 cpuClock = (hardware.processor.systemCpuLoadTicks).map { it }.average().gigaHertz()
@@ -292,7 +294,7 @@ fun main(args: Array<String>) = application {
 
         @Preview
         @Composable
-        fun Column2() {
+        fun MemoryColumn() {
             Column(Modifier.padding(start = 16.dp, end = 16.dp)) {
 
                 Box(Modifier.fillMaxWidth().fillMaxHeight()) {
@@ -386,12 +388,13 @@ fun main(args: Array<String>) = application {
             }
         }
 
+//
 
         MaterialTheme() {
 
             Row(Modifier.padding(top = 16.dp, start = 8.dp).background(MaterialTheme.colors.surface)) {
                 Column1()
-                Column2()
+                MemoryColumn()
             }
         }
 
