@@ -1,6 +1,5 @@
 //import com.sun.management.OperatingSystemMXBean
 
-import androidx.compose.desktop.DesktopMaterialTheme
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -13,7 +12,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toArgb
-
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -23,39 +21,40 @@ import androidx.compose.ui.unit.round
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import com.sun.javafx.application.PlatformImpl
 import io.data2viz.ExperimentalD2V
 import io.data2viz.charts.chart.chart
 import io.data2viz.charts.chart.constant
+import io.data2viz.charts.chart.discrete
 import io.data2viz.charts.chart.mark.MarkCurves
-import io.data2viz.charts.chart.mark.line
+import io.data2viz.charts.chart.mark.area
 import io.data2viz.charts.chart.quantitative
 import io.data2viz.charts.config.ChartConfig
-import io.data2viz.charts.layout.sizeManager
 import io.data2viz.charts.viz.newVizContainer
 import io.data2viz.color.col
 import io.data2viz.geom.Size
+import io.data2viz.math.pct
 import javafx.application.Platform
 import javafx.embed.swing.JFXPanel
-import javafx.geometry.Insets
+import javafx.scene.Group
 import javafx.scene.Scene
-import javafx.scene.control.Button
-import javafx.scene.layout.Background
-import javafx.scene.layout.BackgroundFill
-import javafx.scene.layout.CornerRadii
 import javafx.scene.layout.Pane
-
+import javafx.scene.paint.Color.GRAY
+import javafx.scene.text.Font
 import kotlinx.coroutines.*
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.*
-import org.jetbrains.skiko.currentSystemTheme
+import kotlinx.coroutines.flow.collectIndexed
+import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.javafx.JavaFx
 import oshi.SystemInfo
+import oshi.hardware.CentralProcessor
 import oshi.hardware.GlobalMemory
 import oshi.hardware.PhysicalMemory
 import util.*
 import java.awt.BorderLayout
 import java.awt.Container
-import java.util.*
+import javax.swing.JFrame
 import javax.swing.JPanel
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -65,35 +64,49 @@ import javafx.scene.text.Text as JFXText
 @OptIn(ExperimentalStdlibApi::class, ExperimentalD2V::class)
 
 fun main(args: Array<String>) = application {
-    val mainCoroutineScope = CoroutineScope(Main)
-    val jfxpanel = remember { JFXPanel() }
+    val mainJob = SupervisorJob()
+    val mainCoroutineScope = rememberCoroutineScope { Main }
+   // val jfxpanel = remember { JFXPanel() }
     val jfxtext = remember { JFXText() }
+    var pageState by remember { mutableStateOf<Pages>(Pages.CPU) }
 
 
-    var maxCpuClock by remember { mutableStateOf("") }
-    var cpuClock by remember { mutableStateOf("") }
-    var cpuName by remember { mutableStateOf("") }
-    val cpuInUse by remember { mutableStateOf("") }
 
 
-    var isCPUClicked by remember { mutableStateOf(true) }
+
+    val isCPUClicked = mutableStateListOf(true)
+
     var isMemoryClicked by remember { mutableStateOf(false) }
 
-    /** */
+    /** memory states */
     var memoryFree by remember { mutableStateOf("") }
     var memoryInUse by remember { mutableStateOf("") }
-    var memoryPageSize by remember { mutableStateOf("")}
+    var memoryPageSize by remember { mutableStateOf("") }
     var totalMemory by remember { mutableStateOf(0L) }
     var physicalMemory by mutableStateOf(mutableListOf<PhysicalMemory>())
     var memoryInUsePercentage by remember { mutableStateOf("") }
+
+
+    /** cpu states */
+    var maxCpuClock by remember { mutableStateOf("") }
+    var cpuClock by remember { mutableStateOf("") }
+    var cpuName by remember { mutableStateOf("") }
+    var processorInformation by remember { mutableStateOf<ProcessorInfo?>(null)}
+    var cpuInUse by remember { mutableStateOf("") }
+    var cpuInterrupt by remember { mutableStateOf("") }
+    var cpuContextSwitchers by remember { mutableStateOf("") }
+
 
     Window(onCloseRequest = ::exitApplication) {
         val container = this@Window.window
 
         /** used to send statstics to the graphs */
         val memoryChannel = Channel<GlobalMemory>()
+        val cpuChannel = Channel<CentralProcessor>()
 
-        mainCoroutineScope.launch {
+        LaunchedEffect(Unit) {
+
+            //   mainJob.
 
             val systemInfo = SystemInfo()
             val hardware = systemInfo.hardware
@@ -104,43 +117,46 @@ fun main(args: Array<String>) = application {
             cpuName = systemInfo.hardware.processor.processorIdentifier.name.toString()
             totalMemory = hardware.memory.total
             physicalMemory = hardware.memory.physicalMemory
-
+            processorInformation = ProcessorInfo(hardware.processor.maxFreq.hertzToGigaHertz().gigaHertz(), hardware.processor.physicalPackageCount.toString(), hardware.processor.physicalProcessorCount.toString(), hardware.processor.logicalProcessorCount.toString())
+            print(processorInformation)
             while (true) {
-
-                hardware.processor.currentFreq.toList().map {
-                    (it / (10f).pow(9))
-                }
 
                 memoryFree = hardware.memory.calculate().memoryFree().bytesToMegabytes().megaBytes()
                 memoryInUse = hardware.memory.calculate().memoryInUse().bytesToMegabytes().megaBytes()
                 memoryPageSize = hardware.memory.pageSize.toString()
                 memoryInUsePercentage = "${hardware.memory.calculate().memoryInUsePercentage()} %"
-                memoryChannel.send(hardware.memory)
 
-                cpuClock = (hardware.processor.systemCpuLoadTicks).map { it }.average().gigaHertz()
+                cpuClock = hardware.processor.calculate(SystemInfo()).cpuCurrentFreq().hertzToGigaHertz().gigaHertz()
+                cpuInUse = "${((hardware.processor.calculate(SystemInfo()).cpuInUse(SystemInfo().hardware.processor)*100f).roundToInt() )} %"
+                cpuInterrupt = hardware.processor.calculate(SystemInfo()).cpuInterrupt().toString()
+                cpuContextSwitchers = hardware.processor.calculate(SystemInfo()).cpuContextSwitchers().toString()
                 maxCpuClock = hardware.processor.maxFreq.hertzToGigaHertz().gigaHertz()
-                delay(1000)
+
+                launch {
+                    cpuChannel.send(hardware.processor)
+                    memoryChannel.send(hardware.memory)
+                }
+
+                delay(500)
 
             }
-
 
 
         }
 
         @Preview
+        @OptIn(ExperimentalMaterialApi::class)
         @Composable
-        fun Column1() {
+        fun Column1(cpuClickListener: () -> Unit, memoryClickListener: () -> Unit) {
             Column {
                 //CPU
                 Button(
-                    onClick = {
-                        isCPUClicked = true
 
-                    },
+                    onClick = cpuClickListener,
                     content = {
                         Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.Start) {
                             Text(
-                                "CPU ($maxCpuClock)",
+                                "CPU ($maxCpuClock) ${isCPUClicked.toList()}",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp,
                                 fontFamily = Fonts().sofiaBold
@@ -153,14 +169,14 @@ fun main(args: Array<String>) = application {
                         }
                     },
                     modifier = Modifier.padding(bottom = 8.dp).size(width = 230.dp, height = 80.dp)
-                        .align(Alignment.Start),
-                    enabled = isCPUClicked
+                        .align(Alignment.Start)
+                        .background(ButtonDefaults.buttonColors().backgroundColor(isCPUClicked.last()).value),
+
+                    colors = ButtonDefaults.buttonColors()
                 )
                 // Memory
                 Button(
-                    onClick = {
-                        isMemoryClicked = true
-                    },
+                    onClick = memoryClickListener,
                     content = {
                         Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.Start) {
                             Text(
@@ -179,57 +195,66 @@ fun main(args: Array<String>) = application {
                         }
                     },
                     modifier = Modifier.padding(bottom = 8.dp).size(width = 230.dp, height = 80.dp),
-                    enabled = isMemoryClicked
+                    enabled = true
                 )
 
             }
         }
 
         @Composable
-        fun MemoryGraph(jfxpanel: JFXPanel, container: Container, _size: Size) {
+        fun MemoryGraph(jfxpanel: JFXPanel = JFXPanel(), container: Container, _size: Size) {
             val color = MaterialTheme.colors
-            println("LOG199 $_size")
+
             JavaFXPanel(
                 panel = jfxpanel,
-                root = container
-            ) {
-                Platform.runLater {
+                root = container, onCreate =
+                {
 
-                    val p = Pane()
-
-                    val viz = p.newVizContainer().apply {
-
-                        size = _size.copy(height = _size.height - 32)
-
-                    }
-                    p.widthProperty().addListener { obs, oldVal, newVal ->
-                        viz.size = _size.copy(width = newVal.toDouble(), height = _size.height - 32)
-                    }
-
-
-
-                    val THRESHOLD = 15
                     mainCoroutineScope.launch {
-                        val valuesForUsedMemory = mutableListOf(0.0)
-                        val timedIndex = mutableListOf(0.0)
-                        memoryChannel.consumeAsFlow().collectIndexed { index, it ->
+                        print("invoked")
+                        val p = Pane()
+
+                        val viz = p.newVizContainer().apply {
+
+                            size = _size.copy(height = _size.height - 32)
+
+                        }
+                        p.widthProperty().addListener { obs, oldVal, newVal ->
+                            viz.size = _size.copy(width = newVal.toDouble(), height = _size.height)
+                        }
+                        p.heightProperty().addListener { obs, oldVal, newVal ->
+                            viz.size = _size.copy(width = _size.width, height = newVal.toDouble())
+
+                        }
 
 
-                            valuesForUsedMemory.add((it.total - it.available).bytesToGigabytes().toDouble())
+                        val THRESHOLD = 15
 
-                            if (valuesForUsedMemory.size > THRESHOLD) valuesForUsedMemory.removeAt(0)
-                            Platform.runLater {
+                        launch {
+
+
+                            val valuesForUsedMemory = mutableListOf(0.0)
+
+                            memoryChannel.consumeAsFlow().collectIndexed { index, it ->
+
+
+                                valuesForUsedMemory.add((it.total - it.available).bytesToGigabytes().toDouble())
+
+                                if (valuesForUsedMemory.size > THRESHOLD) valuesForUsedMemory.removeAt(0)
+
 
                                 viz.chart(valuesForUsedMemory, ChartConfig.default.apply {
-
+                                    strokeColor = color.onBackground.toArgb().col
+                                    fontColor = color.onBackground.toArgb().col
+                                    fontWeight = io.data2viz.viz.FontWeight.BOLD
                                     mark {
 
 
                                         // strokeWidth = 3.0
-                                        fills = listOf("#FFFF00".col)
+                                        fills = listOf(color.primary.toArgb().col.withAlpha(99.pct))
 
 
-                                        strokeColors = listOf(color.primary.toArgb().col)
+                                        strokeColors = listOf(color.primary.toArgb().col, color.secondary.toArgb().col)
                                         fillsHighlight = strokeColors
 
                                     }
@@ -239,12 +264,13 @@ fun main(args: Array<String>) = application {
                                         enableAxisLine = true
                                     }
                                     chart {
+
                                         backgroundColor = color.surface.toArgb().col
 
                                     }
 
                                 }) {
-                                    val xC = quantitative(
+                                    val xC = discrete(
                                         {
                                             indexInData.toDouble()
 
@@ -254,12 +280,12 @@ fun main(args: Array<String>) = application {
 
                                         formatter = {
 
-                                            if (this?.roundToInt()!! + 1 < THRESHOLD - 1) "$this" else "${this + index}"
+                                            if (this.roundToInt()!! + 1 < THRESHOLD - 1) "$this" else "${this + index}"
 
                                         }
                                     }
                                     val yC = quantitative({ domain })
-                                    line(xC, yC) {
+                                    area(xC, yC) {
                                         strokeWidth = constant(3.0)
                                         y {
                                             curve = MarkCurves.Curved
@@ -277,124 +303,385 @@ fun main(args: Array<String>) = application {
                                     }
 
                                 }
+
+
                             }
+
+
+                        }.ensureActive()
+
+
+                        val scene = Scene(p, _size.width, _size.height)
+
+                        jfxpanel.scene = scene
+                    }
+                    Platform.setImplicitExit(false)
+
+                })
+
+
+        }
+
+
+        @Composable
+        fun CPUGraph(jfxpanel: JFXPanel = JFXPanel(), container: Container, _size: Size) {
+            val color = MaterialTheme.colors
+
+            JavaFXPanel(
+                panel = jfxpanel,
+                root = container, onCreate =
+                {
+
+                    mainCoroutineScope.launch {
+                        print("invoked")
+                        val p = Pane()
+
+                        val viz = p.newVizContainer().apply {
+
+                            size = _size.copy(height = _size.height - 32)
+
+                        }
+                        p.widthProperty().addListener { obs, oldVal, newVal ->
+                            viz.size = _size.copy(width = newVal.toDouble(), height = _size.height)
+                        }
+                        p.heightProperty().addListener { obs, oldVal, newVal ->
+                            viz.size = _size.copy(width = _size.width, height = newVal.toDouble())
 
                         }
 
 
+                        val THRESHOLD = 15
+                        print("test")
+                        launch {
+
+
+                            val valuesForUsedCPU = mutableListOf(0.0)
+                            val timedIndex = mutableListOf(0.0)
+
+                            cpuChannel.consumeAsFlow().collectIndexed { index, it ->
+
+                                //it.tick
+                                valuesForUsedCPU.add((it.calculate(SystemInfo()).cpuInUse(SystemInfo().hardware.processor))*100)
+
+                                if (valuesForUsedCPU.size > THRESHOLD) valuesForUsedCPU.removeAt(0)
+
+
+                                viz.chart(valuesForUsedCPU, ChartConfig.default.apply {
+                                    strokeColor = color.onBackground.toArgb().col
+                                    fontColor = color.onBackground.toArgb().col
+                                    fontWeight = io.data2viz.viz.FontWeight.BOLD
+                                    mark {
+
+
+                                        // strokeWidth = 3.0
+                                        fills = listOf(color.primary.toArgb().col.withAlpha(99.pct))
+
+
+                                        strokeColors = listOf(color.primary.toArgb().col, color.secondary.toArgb().col)
+                                        fillsHighlight = strokeColors
+
+                                    }
+                                    yAxis {
+
+                                        gridLinesColor = "#BBBBBB".col
+                                        enableAxisLine = true
+                                    }
+                                    chart {
+
+                                        backgroundColor = color.surface.toArgb().col
+
+                                    }
+
+                                }) {
+                                    val xC = discrete(
+                                        {
+                                            indexInData.toDouble()
+
+                                        }
+
+                                    ) {
+
+                                        formatter = {
+
+                                            if (this.roundToInt()!! + 1 < THRESHOLD - 1) "$this" else "${this + index}"
+
+                                        }
+                                    }
+                                    val yC = quantitative({ domain }){
+                                        formatter = {
+                                            "$this %"
+                                        }
+                                    }
+                                    area(xC, yC) {
+                                        strokeWidth = constant(3.0)
+                                        y {
+                                            curve = MarkCurves.Curved
+                                            enableTicks = false
+                                            end = 100.0
+                                            start = 0.0
+                                        }
+                                        x {
+                                            enableTicks = false
+                                        }
+                                    }
+
+                                }
+
+
+                            }
+
+
+                        }
+
+
+                        val scene = Scene(p, _size.width, _size.height)
+
+                        jfxpanel.scene = scene
                     }
+                    Platform.setImplicitExit(false)
 
-                    val scene = Scene(p, _size.width, _size.height)
 
-                    jfxpanel.scene = scene
+                })
 
-                }
-            }
+
         }
 
         @Preview
         @Composable
         fun MemoryColumn() {
-            Column(Modifier.padding(start = 16.dp, end = 16.dp)) {
+            Column(Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp)) {
+                Row(
+                    Modifier.fillMaxWidth().wrapContentHeight(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "Memory",
+                        fontSize = 18.sp,
+                        fontFamily = Fonts().sofiaBold
+                    )
 
-                Box(Modifier.fillMaxWidth().fillMaxHeight()) {
-                    Column(Modifier.fillMaxSize()) {
-                        Row(
-                            Modifier.fillMaxWidth().wrapContentHeight(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                "Memory",
-                                fontSize = 18.sp,
-                                fontFamily = Fonts().sofiaBold
-                            )
+                    Text(
+                        physicalMemory.sumOf { it.capacity }.bytesToGigabytes().gigaByte(),
+                        fontSize = 18.sp,
+                        fontFamily = Fonts().sofiaRegular,
 
+                        )
+
+                }
+                BoxWithConstraints(
+                    Modifier.defaultMinSize(minHeight = 200.dp).fillMaxWidth().padding(vertical = 16.dp)
+                ) {
+                    print("LOG_12 constraint ${this.constraints}, h $this")
+                    MemoryGraph(
+                     //   jfxpanel,
+                        container = container,
+                        _size = Size(constraints.minWidth.toDouble(), constraints.minHeight.toDouble())
+                    )
+                }
+                Row(
+                    Modifier.fillMaxWidth().wrapContentHeight(),
+                ) {
+                    Row(Modifier.fillMaxHeight().weight(2f), horizontalArrangement = Arrangement.Start) {
+                        Column(Modifier.padding(bottom = 4.dp, start = 4.dp, end = 4.dp)) {
                             Text(
-                                physicalMemory.sumOf { it.capacity }.bytesToGigabytes().gigaByte(),
-                                fontSize = 18.sp,
+                                "In use",
                                 fontFamily = Fonts().sofiaRegular,
-
-                                )
-
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                            Text(
+                                "$memoryInUse",
+                                fontFamily = Fonts().sofiaRegular,
+                                fontSize = 16.sp,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            Text("Page size", fontFamily = Fonts().sofiaRegular, fontSize = 12.sp)
+                            Text(
+                                "$memoryPageSize",
+                                fontFamily = Fonts().sofiaRegular,
+                                fontSize = 16.sp,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
                         }
-                        BoxWithConstraints(Modifier.height(200.dp).fillMaxWidth().padding(vertical = 16.dp)) {
-                            print("LOG_12 constraint ${this.constraints}, h $this")
-                            MemoryGraph(jfxpanel, container, Size(constraints.minWidth.toDouble(), 200.0))
+                        Column(Modifier.padding(4.dp)) {
+                            Text("Available", fontFamily = Fonts().sofiaRegular, fontSize = 12.sp)
+                            Text("$memoryFree", fontFamily = Fonts().sofiaRegular, fontSize = 16.sp)
                         }
-                        Row(
-                            Modifier.fillMaxWidth().fillMaxHeight(),
-                        ) {
-                            Row(Modifier.fillMaxHeight().weight(2f), horizontalArrangement = Arrangement.Start) {
-                                Column(Modifier.padding(bottom = 4.dp, start = 4.dp, end = 4.dp)) {
-                                    Text("In use", fontFamily = Fonts().sofiaRegular, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-                                    Text("$memoryInUse", fontFamily = Fonts().sofiaRegular, fontSize = 16.sp, modifier =Modifier.padding(bottom = 4.dp))
-                                    Text("Page size", fontFamily = Fonts().sofiaRegular, fontSize = 12.sp)
-                                    Text("$memoryPageSize", fontFamily = Fonts().sofiaRegular, fontSize = 16.sp,modifier = Modifier.padding(bottom = 4.dp))
-                                }
-                                Column(Modifier.padding(4.dp)) {
-                                    Text("Available", fontFamily = Fonts().sofiaRegular, fontSize = 12.sp)
-                                    Text("$memoryFree", fontFamily = Fonts().sofiaRegular, fontSize = 16.sp)
-                                }
-                            }
-
-
-                            LazyColumn(Modifier.fillMaxHeight().weight(1f)) {
-                                if (physicalMemory.size >= 1) {
-                                    val formattedPhysicalMemory = physicalMemory[0].asMap().map {
-                                        val key = it.key.capitalize()
-                                        val value = when (it.key) {
-                                            "bankLabel" -> (it.value as String).capitalize()
-                                            "capacity" -> (it.value as Long).bytesToGigabytes().gigaByte()
-                                            "clockSpeed" -> ((it.value as Long) / (10.0.pow(6.0))).megaHertz()
-                                            "manufacture" -> (it.value as String).capitalize()
-
-                                            else -> it.value
-                                        }
-                                        key to value
-                                    }.toMap()
-
-                                    items(items = formattedPhysicalMemory.map { it.value }) { item ->
-
-                                        Row(
-                                            modifier = Modifier.padding(bottom = 8.dp).fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Text(
-                                                formattedPhysicalMemory.filterValues { v -> v == item }.keys.first(),
-                                                fontFamily = Fonts().sofiaRegular,
-                                                fontSize = 12.sp
-                                            )
-                                            Text(
-                                                "$item",
-                                                fontFamily = Fonts().sofiaRegular,
-                                                modifier = Modifier.padding(4.dp, 0.dp, 0.dp, 0.dp),
-                                                fontSize = 16.sp,
-
-                                            )
-                                        }
-
-                                    }
-
-                                }
-                            }
-
-                        }
-
                     }
 
 
+                    LazyColumn(Modifier.fillMaxHeight().weight(1f)) {
+                        if (physicalMemory.size >= 1) {
+                            val formattedPhysicalMemory = physicalMemory[0].asMap().map {
+                                val key = it.key.capitalize()
+                                val value = when (it.key) {
+                                    "bankLabel" -> (it.value as String).capitalize()
+                                    "capacity" -> (it.value as Long).bytesToGigabytes().gigaByte()
+                                    "clockSpeed" -> ((it.value as Long) / (10.0.pow(6.0))).megaHertz()
+                                    "manufacture" -> (it.value as String).capitalize()
+
+                                    else -> it.value
+                                }
+                                key to value
+                            }.toMap()
+
+                            items(items = formattedPhysicalMemory.map { it.value }) { item ->
+
+                                Row(
+                                    modifier = Modifier.padding(bottom = 8.dp).fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        formattedPhysicalMemory.filterValues { v -> v == item }.keys.first(),
+                                        fontFamily = Fonts().sofiaRegular,
+                                        fontSize = 12.sp
+                                    )
+                                    Text(
+                                        "$item",
+                                        fontFamily = Fonts().sofiaRegular,
+                                        modifier = Modifier.padding(4.dp, 0.dp, 0.dp, 0.dp),
+                                        fontSize = 16.sp,
+
+                                        )
+                                }
+
+                            }
+
+                        }
+                    }
+
                 }
+
+            }
+
+
+        }
+
+        @Composable
+        fun CPUColumn() {
+            Column(Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp)) {
+                Row(
+                    Modifier.fillMaxWidth().wrapContentHeight(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "CPU",
+                        fontSize = 18.sp,
+                        fontFamily = Fonts().sofiaBold
+                    )
+
+                    Text(
+                        cpuName,
+                        fontSize = 18.sp,
+                        fontFamily = Fonts().sofiaRegular,
+
+                        )
+
+                }
+                BoxWithConstraints(
+                    Modifier.defaultMinSize(minHeight = 200.dp).fillMaxWidth().padding(vertical = 16.dp)
+                ) {
+                    CPUGraph(
+                        //jfxpanel,
+                        container = container,
+                        _size = Size(constraints.minWidth. toDouble (),constraints. minHeight .toDouble()))
+                }
+                Row(Modifier.fillMaxWidth().wrapContentHeight()){
+                    Row(Modifier.fillMaxHeight().weight(2f), horizontalArrangement = Arrangement.Start) {
+                        Column(Modifier.padding(bottom = 4.dp, start = 4.dp, end = 4.dp)) {
+                            Text(
+                                "Utilization",
+                                fontFamily = Fonts().sofiaRegular,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                            Text(
+                                "$cpuInUse",
+                                fontFamily = Fonts().sofiaRegular,
+                                fontSize = 16.sp,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            Text("Interrupt", fontFamily = Fonts().sofiaRegular, fontSize = 12.sp)
+                            Text(
+                                "$cpuInterrupt",
+                                fontFamily = Fonts().sofiaRegular,
+                                fontSize = 16.sp,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                        }
+                        Column(Modifier.padding(4.dp)) {
+                            Text("Speed", fontFamily = Fonts().sofiaRegular, fontSize = 12.sp)
+                            Text("$cpuClock", fontFamily = Fonts().sofiaRegular, fontSize = 16.sp)
+                            Text("Context Switchers", fontFamily = Fonts().sofiaRegular, fontSize = 12.sp)
+                            Text("$cpuContextSwitchers", fontFamily = Fonts().sofiaRegular, fontSize = 16.sp)
+                        }
+                    }
+                    LazyColumn(Modifier.fillMaxHeight().weight(1f)) {
+                        if (processorInformation != null) {
+                            val formattedProcessorInformation = processorInformation!!.asMap().map {
+                                val key = it.key.capitalize().replace("_"," ")
+                                key to it.value
+                            }.toMap()
+
+                            items(items = formattedProcessorInformation.map { it.value }) { item ->
+
+                                Row(
+                                    modifier = Modifier.padding(bottom = 8.dp).fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        formattedProcessorInformation.filterValues { v -> v == item }.keys.first(),
+                                        fontFamily = Fonts().sofiaRegular,
+                                        fontSize = 12.sp
+                                    )
+                                    Text(
+                                        "$item",
+                                        fontFamily = Fonts().sofiaRegular,
+                                        modifier = Modifier.padding(4.dp, 0.dp, 0.dp, 0.dp),
+                                        fontSize = 16.sp,
+
+                                        )
+                                }
+
+                            }
+
+                        }
+                    }
+                }
+
+
+
 
             }
         }
 
 //
 
-        MaterialTheme() {
+        MaterialTheme(lightColors()) {
 
-            Row(Modifier.padding(top = 16.dp, start = 8.dp).background(MaterialTheme.colors.surface)) {
-                Column1()
-                MemoryColumn()
+            Scaffold(Modifier.padding(top = 16.dp, start = 8.dp)) {
+                Row() {
+                    Column1(cpuClickListener = {
+                        pageState = Pages.CPU
+                    }, memoryClickListener = {
+                        pageState = Pages.Memory
+                        print("Log: ")
+                    })
+
+
+                    //   CPUColumn()
+                    print("Log: $pageState")
+                    when (pageState) {
+                        is Pages.CPU -> {
+
+                            CPUColumn()
+                        }
+
+                        is Pages.Memory -> MemoryColumn()
+
+                    }
+                }
+
             }
         }
 
@@ -404,18 +691,20 @@ fun main(args: Array<String>) = application {
 
 
 @Composable
+@Preview
 fun JavaFXPanel(
     root: Container,
     panel: JFXPanel,
- onCreate: () -> Unit
+    onCreate: () -> Unit
+
+
 ) {
     val container = remember { JPanel() }
     val density = LocalDensity.current.density
 
     Layout(
         content =
-        {}
-        ,
+        {},
         modifier = Modifier.onGloballyPositioned { childCoordinates ->
             val coordinates = childCoordinates.parentCoordinates!!
             val location = coordinates.localToWindow(Offset.Zero).round()
@@ -435,14 +724,31 @@ fun JavaFXPanel(
     )
 
     DisposableEffect(Unit) {
+
+
         container.apply {
             layout = BorderLayout(0, 0)
             add(panel)
         }
+        onCreate()
         root.add(container)
-        onCreate.invoke()
+
+
         onDispose {
-            root.remove(container)
+
+           root.remove(container)
         }
     }
+
+
+
+
+
+
+}
+
+
+sealed class Pages {
+    object CPU : Pages()
+    object Memory : Pages()
 }

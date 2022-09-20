@@ -46,9 +46,14 @@ dependencies {
 //    implementation("ch.qos.logback:logback-classic:$logback_version")
 //    testImplementation("io.ktor:ktor-server-tests:$ktor_version")
     implementation(compose.desktop.currentOs)
+    // https://mvnrepository.com/artifact/com.github.oshi/oshi-core
     implementation( "com.github.oshi", name= "oshi-core", version= "5.8.3")
-    //implementation ("org.hyperic:sigar:1.6.5.132-6")
+
+    // https://mvnrepository.com/artifact/com.github.oshi/oshi-demo
+    implementation("com.github.oshi:oshi-demo:5.8.3")
+
     implementation(kotlin("reflect"))
+
 
 }
 
@@ -56,7 +61,7 @@ tasks.withType<KotlinCompile>() {
     kotlinOptions.jvmTarget = "15"
 }
 javafx {
-    version = "15"
+    version = "15.0.1"
     modules = listOf("javafx.controls", "javafx.graphics", "javafx.swing", "javafx.base")
 }
 
@@ -65,6 +70,7 @@ compose.desktop {
         javaHome = System.getProperty("java.home")
 
         mainClass = "MainKt"
+
         nativeDistributions {
 
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
