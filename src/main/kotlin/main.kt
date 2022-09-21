@@ -156,7 +156,7 @@ fun main(args: Array<String>) = application {
                     content = {
                         Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.Start) {
                             Text(
-                                "CPU ($maxCpuClock) ${isCPUClicked.toList()}",
+                                "CPU ($maxCpuClock)",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp,
                                 fontFamily = Fonts().sofiaBold
@@ -449,7 +449,7 @@ fun main(args: Array<String>) = application {
         @Preview
         @Composable
         fun MemoryColumn() {
-            Column(Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp)) {
+            Column(Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp), verticalArrangement = Arrangement.SpaceBetween) {
                 Row(
                     Modifier.fillMaxWidth().wrapContentHeight(),
                     horizontalArrangement = Arrangement.SpaceBetween
