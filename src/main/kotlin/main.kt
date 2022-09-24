@@ -76,7 +76,7 @@ fun main(args: Array<String>) = application {
 
     val isCPUClicked = mutableStateListOf(true)
 
-    var isMemoryClicked by remember { mutableStateOf(false) }
+    var isMemoryClicked = mutableStateListOf(false)
 
     /** memory states */
     var memoryFree by remember { mutableStateOf("") }
@@ -148,9 +148,10 @@ fun main(args: Array<String>) = application {
         @OptIn(ExperimentalMaterialApi::class)
         @Composable
         fun Column1(cpuClickListener: () -> Unit, memoryClickListener: () -> Unit) {
+            print("Log, ${ButtonDefaults.buttonColors().contentColor(isCPUClicked.last()).value}")
             Column {
                 //CPU
-                Button(
+                UAButton(
 
                     onClick = cpuClickListener,
                     content = {
@@ -170,12 +171,11 @@ fun main(args: Array<String>) = application {
                     },
                     modifier = Modifier.padding(bottom = 8.dp).size(width = 230.dp, height = 80.dp)
                         .align(Alignment.Start)
-                        .background(ButtonDefaults.buttonColors().backgroundColor(isCPUClicked.last()).value),
-
-                    colors = ButtonDefaults.buttonColors()
+                  ,
+                    selected = isCPUClicked.last()
                 )
                 // Memory
-                Button(
+                UAButton(
                     onClick = memoryClickListener,
                     content = {
                         Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.Start) {
@@ -195,7 +195,8 @@ fun main(args: Array<String>) = application {
                         }
                     },
                     modifier = Modifier.padding(bottom = 8.dp).size(width = 230.dp, height = 80.dp),
-                    enabled = true
+                    enabled = true,
+                    selected = isMemoryClicked.last()
                 )
 
             }
@@ -280,7 +281,7 @@ fun main(args: Array<String>) = application {
 
                                         formatter = {
 
-                                            if (this.roundToInt()!! + 1 < THRESHOLD - 1) "$this" else "${this + index}"
+                                            if (this.roundToInt() + 1 < THRESHOLD - 1) "$this" else "${this + index}"
 
                                         }
                                     }
@@ -290,15 +291,18 @@ fun main(args: Array<String>) = application {
                                         y {
                                             curve = MarkCurves.Curved
                                             enableTicks = false
+                                            enableTicksLabels = false
 
-                                            tickCount =
-                                                it.physicalMemory.sumOf { it.capacity }.bytesToGigabytes().roundToInt()
+//                                            tickCount =
+//                                                it.physicalMemory.sumOf { it.capacity }.bytesToGigabytes().roundToInt()
                                             end = it.physicalMemory.sumOf { it.capacity }.bytesToGigabytes()
 
                                             start = 0.0
                                         }
                                         x {
                                             enableTicks = false
+                                            enableTicks = false
+                                            enableTicksLabels = false
                                         }
                                     }
 
@@ -417,11 +421,13 @@ fun main(args: Array<String>) = application {
                                         y {
                                             curve = MarkCurves.Curved
                                             enableTicks = false
+                                            enableTicksLabels = false
                                             end = 100.0
                                             start = 0.0
                                         }
                                         x {
                                             enableTicks = false
+                                            enableTicksLabels = false
                                         }
                                     }
 
@@ -449,6 +455,7 @@ fun main(args: Array<String>) = application {
         @Preview
         @Composable
         fun MemoryColumn() {
+
             Column(Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp), verticalArrangement = Arrangement.SpaceBetween) {
                 Row(
                     Modifier.fillMaxWidth().wrapContentHeight(),
@@ -662,6 +669,7 @@ fun main(args: Array<String>) = application {
             Scaffold(Modifier.padding(top = 16.dp, start = 8.dp)) {
                 Row() {
                     Column1(cpuClickListener = {
+
                         pageState = Pages.CPU
                     }, memoryClickListener = {
                         pageState = Pages.Memory
@@ -673,11 +681,16 @@ fun main(args: Array<String>) = application {
                     print("Log: $pageState")
                     when (pageState) {
                         is Pages.CPU -> {
-
+                            isCPUClicked.add(true)
+                            isMemoryClicked.add( false)
                             CPUColumn()
                         }
 
-                        is Pages.Memory -> MemoryColumn()
+                        is Pages.Memory -> {
+                            isCPUClicked.add(false)
+                            isMemoryClicked.add(true)
+                            MemoryColumn()
+                        }
 
                     }
                 }
@@ -690,62 +703,6 @@ fun main(args: Array<String>) = application {
 }
 
 
-@Composable
-@Preview
-fun JavaFXPanel(
-    root: Container,
-    panel: JFXPanel,
-    onCreate: () -> Unit
-
-
-) {
-    val container = remember { JPanel() }
-    val density = LocalDensity.current.density
-
-    Layout(
-        content =
-        {},
-        modifier = Modifier.onGloballyPositioned { childCoordinates ->
-            val coordinates = childCoordinates.parentCoordinates!!
-            val location = coordinates.localToWindow(Offset.Zero).round()
-            val size = coordinates.size
-            container.setBounds(
-                (location.x / density).toInt(),
-                (location.y / density).toInt(),
-                (size.width / density).toInt(),
-                (size.height / density).toInt()
-            )
-            container.validate()
-            container.repaint()
-        },
-        measurePolicy = { _, _ ->
-            layout(0, 0) {}
-        }
-    )
-
-    DisposableEffect(Unit) {
-
-
-        container.apply {
-            layout = BorderLayout(0, 0)
-            add(panel)
-        }
-        onCreate()
-        root.add(container)
-
-
-        onDispose {
-
-           root.remove(container)
-        }
-    }
-
-
-
-
-
-
-}
 
 
 sealed class Pages {
